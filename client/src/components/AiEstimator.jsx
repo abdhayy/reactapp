@@ -67,9 +67,9 @@ export default function AiEstimator({ onResult }) {
       <div className="setup">
         <p><strong>AI is not set up yet.</strong> To turn it on:</p>
         <ol>
-          <li>Create an API key at <a href="https://platform.claude.com" target="_blank" rel="noreferrer">platform.claude.com</a> and add a few dollars of credit.</li>
+          <li>Get a free API key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> (sign in with Google, click <em>Create API key</em>).</li>
           <li>In the <code>server</code> folder, copy <code>.env.example</code> to <code>.env</code>.</li>
-          <li>Paste your key after <code>ANTHROPIC_API_KEY=</code>, save, and restart <code>npm run server</code>.</li>
+          <li>Paste your key after <code>GEMINI_API_KEY=</code>, save, and restart <code>npm run server</code>.</li>
         </ol>
         <p className="muted">You can still use the 🔎 Food list without AI.</p>
       </div>

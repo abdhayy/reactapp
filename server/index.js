@@ -1,5 +1,5 @@
 // REST API for the health app.
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '.env'), quiet: true });
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
@@ -124,28 +124,15 @@ app.delete('/api/foods/:id', (req, res) => {
 });
 
 // ---------- AI calorie estimate ----------
-app.get('/api/ai/status', (req, res) => res.json({ configured: ai.isConfigured() }));
+app.get('/api/ai/status', (req, res) => res.json({ configured: ai.isConfigured(), provider: ai.provider() }));
 
 app.post('/api/ai/estimate', async (req, res) => {
-  if (!ai.isConfigured()) {
-    return res.status(503).json({ error: 'AI is not set up yet. Add ANTHROPIC_API_KEY to server/.env and restart the server.' });
-  }
   const { text, image } = req.body;
   if (!text?.trim() && !image) return res.status(400).json({ error: 'Describe your meal or add a photo.' });
   try {
     res.json(await ai.estimateMeal({ text, image }));
   } catch (e) {
-    if (e instanceof ai.Anthropic.AuthenticationError) {
-      return res.status(502).json({ error: 'The API key in server/.env was rejected. Check that it is correct.' });
-    }
-    if (e instanceof ai.Anthropic.RateLimitError) {
-      return res.status(429).json({ error: 'Too many AI requests. Wait a minute and try again.' });
-    }
-    if (e instanceof ai.Anthropic.APIError) {
-      console.error('Claude API error:', e.status, e.message);
-      return res.status(502).json({ error: `AI service error (${e.status ?? 'network'}). Check your credits or try again.` });
-    }
-    console.error(e);
+    if (!e.status) console.error(e);
     res.status(e.status || 500).json({ error: e.message });
   }
 });

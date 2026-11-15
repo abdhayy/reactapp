@@ -29,18 +29,22 @@ Terminal 2 (app on http://localhost:5173):
 npm run client
 ```
 
-## Turn on AI calorie estimates (optional)
+## Turn on AI calorie estimates (optional, free)
 
-The AI uses the Claude API. It is pay-as-you-go: you buy credits, no monthly subscription.
+The AI uses **Google Gemini's free tier** (no credit card needed).
 
-1. Create an account and an API key at https://platform.claude.com, and add some credit.
-2. Copy `server/.env.example` to `server/.env` (on Windows: `copy server\.env.example server\.env`).
-3. Open `server/.env` and paste your key after `ANTHROPIC_API_KEY=`.
+1. Go to https://aistudio.google.com/apikey, sign in with a Google account and click **Create API key**.
+2. Copy `server/.env.example` to `server/.env` (Windows PowerShell: `copy server\.env.example server\.env`).
+3. Open `server/.env` and paste your key after `GEMINI_API_KEY=`.
 4. Restart `npm run server`.
 
-`server/.env` is in `.gitignore`, so your key is never uploaded to GitHub.
-By default it uses `claude-opus-5-5` (most accurate). For a much cheaper option, add
-`CLAUDE_MODEL=claude-haiku-5-5` to `server/.env`.
+Notes:
+- The free tier has per-minute and per-day limits. If you hit them, the app tells you to wait.
+- On the free tier, Google may use what you send to improve its products. Don't send anything private.
+- If you see "model not found", set `GEMINI_MODEL` in `server/.env` to a current model from
+  https://ai.google.dev/gemini-api/docs/models.
+- `server/.env` is in `.gitignore`, so your key is never uploaded to GitHub.
+- Prefer Claude (paid, pay-as-you-go)? Set `ANTHROPIC_API_KEY` instead; see `server/.env.example`.
 
 ## Database tables
 

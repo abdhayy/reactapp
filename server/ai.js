@@ -1,11 +1,10 @@
-// AI calorie estimation using the Claude API.
-// Needs ANTHROPIC_API_KEY in server/.env (see README).
-const Anthropic = require('@anthropic-ai/sdk');
-const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+// AI calorie estimation.
+// Two providers, chosen from server/.env:
+//   - Google Gemini (free tier): set GEMINI_API_KEY
+//   - Claude (paid, pay-as-you-go): set ANTHROPIC_API_KEY
+// If both keys are set, Gemini is used unless AI_PROVIDER=claude.
 const { z } = require('zod');
 const db = require('./db');
-
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 
 const EstimateSchema = z.object({
   items: z.array(
@@ -21,12 +20,24 @@ const EstimateSchema = z.object({
   notes: z.string(),
 });
 
-function isConfigured() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+class AiError extends Error {
+  constructor(message, status = 502) {
+    super(message);
+    this.status = status;
+  }
 }
 
-// The food list goes in the system prompt so estimates match the app's own data.
-// Built once at startup so the prompt stays identical between calls (cacheable).
+function provider() {
+  const wanted = (process.env.AI_PROVIDER || '').toLowerCase();
+  if (wanted === 'claude' && process.env.ANTHROPIC_API_KEY) return 'claude';
+  if (wanted === 'gemini' && process.env.GEMINI_API_KEY) return 'gemini';
+  if (process.env.GEMINI_API_KEY) return 'gemini';
+  if (process.env.ANTHROPIC_API_KEY) return 'claude';
+  return null;
+}
+
+// The food list goes in the instructions so estimates match the app's own data.
+// Built once so the text stays identical between calls.
 let systemPrompt = null;
 function getSystemPrompt() {
   if (systemPrompt) return systemPrompt;
@@ -52,38 +63,121 @@ ${foods}`;
   return systemPrompt;
 }
 
-// text: what the user ate. image: optional data URL ("data:image/jpeg;base64,...")
-async function estimateMeal({ text, image }) {
+function parseImage(image) {
+  if (!image) return null;
+  const match = /^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/.exec(image);
+  if (!match) throw new AiError('Unsupported image format', 400);
+  return { mediaType: match[1], data: match[2] };
+}
+
+const userText = (text) => (text?.trim() ? `What I ate: ${text.trim()}` : 'Estimate the food in this photo.');
+
+// ---------------- Gemini (free tier) ----------------
+// JSON schema Gemini must follow (same shape as EstimateSchema)
+const geminiJsonSchema = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          food_name: { type: 'string' },
+          portion: { type: 'string' },
+          calories: { type: 'integer' },
+          protein_g: { type: 'number' },
+          carbs_g: { type: 'number' },
+          fat_g: { type: 'number' },
+        },
+        required: ['food_name', 'portion', 'calories', 'protein_g', 'carbs_g', 'fat_g'],
+      },
+    },
+    notes: { type: 'string' },
+  },
+  required: ['items', 'notes'],
+};
+
+async function estimateWithGemini(text, img) {
+  const { GoogleGenAI, ApiError } = require('@google/genai');
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const parts = [];
+  if (img) parts.push({ inlineData: { mimeType: img.mediaType, data: img.data } });
+  parts.push({ text: userText(text) });
+
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts }],
+      config: {
+        systemInstruction: getSystemPrompt(),
+        responseMimeType: 'application/json',
+        responseJsonSchema: geminiJsonSchema,
+      },
+    });
+  } catch (e) {
+    if (e instanceof ApiError) {
+      console.error('Gemini API error:', e.status, e.message);
+      if (e.status === 429) throw new AiError('Free AI limit reached. Wait a minute (or until tomorrow for the daily limit) and try again.', 429);
+      if (e.status === 400 && /api key/i.test(e.message)) throw new AiError('The GEMINI_API_KEY in server/.env was rejected. Check that it is correct.');
+      if (e.status === 401 || e.status === 403) throw new AiError('The GEMINI_API_KEY in server/.env was rejected. Check that it is correct.');
+      if (e.status === 404) throw new AiError('Gemini model not found. Set GEMINI_MODEL in server/.env to a current model name.');
+      throw new AiError(`Gemini error (${e.status}). Try again in a moment.`);
+    }
+    throw new AiError('Could not reach Gemini. Check your internet connection.');
+  }
+
+  let data;
+  try {
+    data = EstimateSchema.parse(JSON.parse(response.text || ''));
+  } catch {
+    throw new AiError('The AI returned an unexpected answer. Please try again.');
+  }
+  return data;
+}
+
+// ---------------- Claude (paid) ----------------
+async function estimateWithClaude(text, img) {
+  const Anthropic = require('@anthropic-ai/sdk');
+  const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
   const client = new Anthropic();
   const content = [];
+  if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } });
+  content.push({ type: 'text', text: userText(text) });
 
-  if (image) {
-    const match = /^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/.exec(image);
-    if (!match) throw Object.assign(new Error('Unsupported image format'), { status: 400 });
-    content.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+  let response;
+  try {
+    response = await client.beta.messages.parse({
+      model: process.env.CLAUDE_MODEL || 'claude-opus-5-5',
+      max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: betaZodOutputFormat(EstimateSchema) },
+      system: [{ type: 'text', text: getSystemPrompt(), cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content }],
+    });
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) throw new AiError('The ANTHROPIC_API_KEY in server/.env was rejected. Check that it is correct.');
+    if (e instanceof Anthropic.RateLimitError) throw new AiError('Too many AI requests. Wait a minute and try again.', 429);
+    if (e instanceof Anthropic.APIError) {
+      console.error('Claude API error:', e.status, e.message);
+      throw new AiError(`AI service error (${e.status ?? 'network'}). Check your credits or try again.`);
+    }
+    throw e;
   }
-  content.push({
-    type: 'text',
-    text: text?.trim() ? `What I ate: ${text.trim()}` : 'Estimate the food in this photo.',
-  });
 
-  const response = await client.beta.messages.parse({
-    model: MODEL,
-    max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: { effort: 'low', format: betaZodOutputFormat(EstimateSchema) },
-    system: [{ type: 'text', text: getSystemPrompt(), cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content }],
-  });
-
-  if (response.stop_reason === 'refusal') {
-    throw Object.assign(new Error('The AI could not estimate this meal. Try describing it differently.'), { status: 422 });
-  }
-  if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
-    throw Object.assign(new Error('The AI returned an incomplete answer. Please try again.'), { status: 502 });
-  }
+  if (response.stop_reason === 'refusal') throw new AiError('The AI could not estimate this meal. Try describing it differently.', 422);
+  if (response.stop_reason === 'max_tokens' || !response.parsed_output) throw new AiError('The AI returned an incomplete answer. Please try again.');
   return response.parsed_output;
 }
 
-module.exports = { estimateMeal, isConfigured, Anthropic };
+// text: what the user ate. image: optional data URL ("data:image/jpeg;base64,...")
+async function estimateMeal({ text, image }) {
+  const img = parseImage(image);
+  const p = provider();
+  if (p === 'gemini') return estimateWithGemini(text, img);
+  if (p === 'claude') return estimateWithClaude(text, img);
+  throw new AiError('AI is not set up yet. Add GEMINI_API_KEY to server/.env and restart the server.', 503);
+}
+
+module.exports = { estimateMeal, provider, isConfigured: () => provider() !== null };
