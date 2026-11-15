@@ -27,6 +27,13 @@ export const api = {
   copyWorkouts: (from, to) => request('/workouts/copy', { method: 'POST', body: { from, to } }),
 
   getSummary: () => request('/summary'),
+
+  searchFoods: (q) => request(`/foods?q=${encodeURIComponent(q)}`),
+  saveFood: (food) => request('/foods', { method: 'POST', body: food }),
+  deleteFood: (id) => request(`/foods/${id}`, { method: 'DELETE' }),
+
+  aiStatus: () => request('/ai/status'),
+  aiEstimate: (text, image) => request('/ai/estimate', { method: 'POST', body: { text, image } }),
 };
 
 export const toDateStr = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time

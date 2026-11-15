@@ -1,16 +1,36 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api, toDateStr, shiftDate } from './api';
-import CalorieTracker from './components/CalorieTracker';
-import WorkoutChecklist from './components/WorkoutChecklist';
-import WeeklySummary from './components/WeeklySummary';
+import Dashboard from './pages/Dashboard';
+import FoodPage from './pages/FoodPage';
+import WorkoutPage from './pages/WorkoutPage';
+
+const TABS = [
+  { id: 'dashboard', label: '🏠 Dashboard' },
+  { id: 'food', label: '🍽️ Food' },
+  { id: 'workout', label: '🏋️ Workout' },
+];
+
+const tabFromHash = () => {
+  const h = window.location.hash.slice(1);
+  return TABS.some((t) => t.id === h) ? h : 'dashboard';
+};
 
 export default function App() {
+  const [tab, setTab] = useState(tabFromHash);
   const [date, setDate] = useState(toDateStr(new Date()));
   const [goal, setGoal] = useState(2000);
   const [meals, setMeals] = useState([]);
   const [workouts, setWorkouts] = useState([]);
   const [summary, setSummary] = useState([]);
   const [error, setError] = useState('');
+
+  // Keep the tab in the URL (#food) so refresh and the back button work
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const goTo = (id) => { window.location.hash = id; setTab(id); };
 
   const load = useCallback(async () => {
     try {
@@ -31,7 +51,7 @@ export default function App() {
 
   // Wrap any API action so the screen refreshes afterwards
   const run = (fn) => async (...args) => {
-    try { await fn(...args); await load(); } catch (e) { setError(e.message); }
+    try { await fn(...args); await load(); return true; } catch (e) { setError(e.message); return false; }
   };
 
   // Tick the checkbox instantly, then save to the database
@@ -40,53 +60,53 @@ export default function App() {
     run(api.toggleWorkout)(id);
   };
 
-  const eaten =meals.reduce((s, m) => s + m.calories, 0);
+  const eaten = meals.reduce((s, m) => s + m.calories, 0);
   const burned = workouts.filter((w) => w.done).reduce((s, w) => s + (w.calories_burned || 0), 0);
   const isToday = date === toDateStr(new Date());
+  const stats = { goal, eaten, burned, remaining: goal - eaten + burned };
 
   return (
     <div className="app">
       <header>
         <h1>💪 Health Tracker</h1>
         <div className="date-nav">
-          <button onClick={() => setDate(shiftDate(date, -1))}>◀</button>
+          <button onClick={() => setDate(shiftDate(date, -1))} aria-label="Previous day">◀</button>
           <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-          <button onClick={() => setDate(shiftDate(date, 1))}>▶</button>
+          <button onClick={() => setDate(shiftDate(date, 1))} aria-label="Next day">▶</button>
           {!isToday && <button onClick={() => setDate(toDateStr(new Date()))}>Today</button>}
         </div>
       </header>
 
-      {error && <div className="error">{error}</div>}
+      <nav className="tabs">
+        {TABS.map((t) => (
+          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => goTo(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-      <section className="stats">
-        <Stat label="Goal" value={goal} />
-        <Stat label="Eaten" value={eaten} />
-        <Stat label="Burned" value={burned} />
-        <Stat label="Remaining" value={goal - eaten + burned} highlight={goal - eaten + burned < 0 ? 'over' : 'ok'} />
-      </section>
+      {error && <div className="error" onClick={() => setError('')}>{error}</div>}
 
-      <div className="grid">
-        <CalorieTracker
-          date={date} meals={meals} goal={goal} eaten={eaten}
-          onAdd={run(api.addMeal)} onDelete={run(api.deleteMeal)} onGoal={run(api.setGoal)}
+      {tab === 'dashboard' && (
+        <Dashboard
+          date={date} stats={stats} meals={meals} workouts={workouts} summary={summary}
+          onToggle={toggleWorkout} goTo={goTo}
         />
-        <WorkoutChecklist
-          date={date} workouts={workouts}
+      )}
+      {tab === 'food' && (
+        <FoodPage
+          date={date} stats={stats} meals={meals}
+          onAddMeal={run(api.addMeal)} onDeleteMeal={run(api.deleteMeal)} onGoal={run(api.setGoal)}
+          onError={setError}
+        />
+      )}
+      {tab === 'workout' && (
+        <WorkoutPage
+          date={date} workouts={workouts} burned={burned}
           onAdd={run(api.addWorkout)} onToggle={toggleWorkout} onDelete={run(api.deleteWorkout)}
           onCopyYesterday={run(() => api.copyWorkouts(shiftDate(date, -1), date))}
         />
-      </div>
-
-      <WeeklySummary data={summary} goal={goal} />
-    </div>
-  );
-}
-
-function Stat({ label, value, highlight }) {
-  return (
-    <div className={`stat ${highlight || ''}`}>
-      <span>{label}</span>
-      <strong>{value} kcal</strong>
+      )}
     </div>
   );
 }

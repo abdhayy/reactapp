@@ -41,6 +41,26 @@ db.exec(`
     created_at       TEXT    DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date);
+
+  -- Food list used for search: built-in Malaysian foods + your own saved foods
+  CREATE TABLE IF NOT EXISTS foods (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    category    TEXT    NOT NULL DEFAULT 'Lain-lain',
+    serving     TEXT    NOT NULL DEFAULT '1 hidangan',
+    calories    INTEGER NOT NULL CHECK (calories >= 0),
+    protein_g   REAL    DEFAULT 0,
+    carbs_g     REAL    DEFAULT 0,
+    fat_g       REAL    DEFAULT 0,
+    source      TEXT    NOT NULL DEFAULT 'builtin' CHECK (source IN ('builtin','custom','ai'))
+  );
 `);
+
+// Fill the food list the first time (and add any new built-in foods later)
+const insertFood = db.prepare(
+  `INSERT OR IGNORE INTO foods (name, category, serving, calories, protein_g, carbs_g, fat_g, source)
+   VALUES (?, ?, ?, ?, ?, ?, ?, 'builtin')`
+);
+db.transaction((rows) => rows.forEach((r) => insertFood.run(...r)))(require('./foods-seed'));
 
 module.exports = db;

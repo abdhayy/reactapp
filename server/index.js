@@ -1,11 +1,13 @@
 // REST API for the health app.
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
+const ai = require('./ai');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // room for meal photos
 
 const today = () => new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
 
@@ -83,6 +85,69 @@ app.post('/api/workouts/copy', (req, res) => {
      SELECT ?, exercise, sets, reps, duration_min, calories_burned FROM workouts WHERE date = ?`
   ).run(to, from).changes;
   res.json({ copied: n });
+});
+
+// ---------- Food list (search) ----------
+app.get('/api/foods', (req, res) => {
+  const q = (req.query.q || '').trim();
+  const rows = q
+    ? db.prepare(
+        `SELECT * FROM foods WHERE name LIKE ? OR category LIKE ?
+         ORDER BY (name LIKE ?) DESC, length(name) LIMIT 30`
+      ).all(`%${q}%`, `%${q}%`, `${q}%`)
+    : db.prepare('SELECT * FROM foods ORDER BY category, name').all();
+  res.json(rows);
+});
+
+// Save a food to your own list (e.g. an AI estimate you want to reuse)
+app.post('/api/foods', (req, res) => {
+  const { name, category = 'Saya', serving = '1 hidangan', calories, protein_g = 0, carbs_g = 0, fat_g = 0, source = 'custom' } = req.body;
+  if (!name || calories == null) return res.status(400).json({ error: 'name and calories are required' });
+  try {
+    const info = db.prepare(
+      `INSERT INTO foods (name, category, serving, calories, protein_g, carbs_g, fat_g, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(name) DO UPDATE SET serving = excluded.serving, calories = excluded.calories,
+         protein_g = excluded.protein_g, carbs_g = excluded.carbs_g, fat_g = excluded.fat_g
+       WHERE foods.source != 'builtin'`
+    ).run(name.trim(), category, serving, Math.round(calories), protein_g, carbs_g, fat_g, source === 'ai' ? 'ai' : 'custom');
+    if (!info.changes) return res.status(409).json({ error: `"${name}" is already in the built-in list` });
+    res.status(201).json(db.prepare('SELECT * FROM foods WHERE name = ?').get(name.trim()));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/foods/:id', (req, res) => {
+  db.prepare("DELETE FROM foods WHERE id = ? AND source != 'builtin'").run(req.params.id);
+  res.status(204).end();
+});
+
+// ---------- AI calorie estimate ----------
+app.get('/api/ai/status', (req, res) => res.json({ configured: ai.isConfigured() }));
+
+app.post('/api/ai/estimate', async (req, res) => {
+  if (!ai.isConfigured()) {
+    return res.status(503).json({ error: 'AI is not set up yet. Add ANTHROPIC_API_KEY to server/.env and restart the server.' });
+  }
+  const { text, image } = req.body;
+  if (!text?.trim() && !image) return res.status(400).json({ error: 'Describe your meal or add a photo.' });
+  try {
+    res.json(await ai.estimateMeal({ text, image }));
+  } catch (e) {
+    if (e instanceof ai.Anthropic.AuthenticationError) {
+      return res.status(502).json({ error: 'The API key in server/.env was rejected. Check that it is correct.' });
+    }
+    if (e instanceof ai.Anthropic.RateLimitError) {
+      return res.status(429).json({ error: 'Too many AI requests. Wait a minute and try again.' });
+    }
+    if (e instanceof ai.Anthropic.APIError) {
+      console.error('Claude API error:', e.status, e.message);
+      return res.status(502).json({ error: `AI service error (${e.status ?? 'network'}). Check your credits or try again.` });
+    }
+    console.error(e);
+    res.status(e.status || 500).json({ error: e.message });
+  }
 });
 
 // ---------- Summary (last 7 days) ----------
