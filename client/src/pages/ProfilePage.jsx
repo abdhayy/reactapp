@@ -65,7 +65,7 @@ export default function ProfilePage({ user, setUser, onLogout }) {
             </button>
           ))}
         </div>
-        <p className="muted tiny">These are rough guides. Your real needs depend on your age, weight, height and activity.</p>
+        <p className="muted tiny">These are rough guides. For a goal based on your height, weight and target, open <a href="#goals">🎯 Goals</a>.</p>
         <button type="submit">Save</button>
       </form>
 

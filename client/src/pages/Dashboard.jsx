@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { api } from '../api';
 import WeeklySummary from '../components/WeeklySummary';
 
 const MEAL_TYPES = [
@@ -8,6 +10,9 @@ const MEAL_TYPES = [
 ];
 
 export default function Dashboard({ stats, meals, workouts, summary, onToggle, goTo }) {
+  const [body, setBody] = useState(null);
+  useEffect(() => { api.getBody().then(setBody).catch(() => {}); }, []);
+
   const { goal, eaten, burned, remaining } = stats;
   const pct = Math.min(100, Math.round((eaten / goal) * 100));
   const macros = meals.reduce(
@@ -32,6 +37,8 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
           </div>
         </div>
       </section>
+
+      {body && <GoalStrip body={body} goTo={goTo} />}
 
       {/* Quick actions */}
       <section className="quick">
@@ -122,5 +129,33 @@ function Macro({ name, g, kcalPerG, eaten, cls }) {
       <div className="progress thin"><div className={cls} style={{ width: Math.min(100, share) + '%' }} /></div>
       <span className="muted">{g.toFixed(0)}g</span>
     </div>
+  );
+}
+
+function GoalStrip({ body, goTo }) {
+  const { plan, month_target: t, current_weight: w } = body;
+  if (!plan.ready || !t) {
+    return (
+      <button className="card goal-strip prompt" onClick={() => goTo('goals')}>
+        <span className="goal-icon">🎯</span>
+        <span className="grow">
+          <strong>{plan.ready ? "Set this month's target weight" : 'Set up your weight goal'}</strong>
+          <span className="muted tiny">{plan.ready ? 'Get a daily calorie plan to reach it' : 'Enter your height and weight to get a suggested daily intake'}</span>
+        </span>
+        <span className="chev">›</span>
+      </button>
+    );
+  }
+  return (
+    <button className="card goal-strip" onClick={() => goTo('goals')}>
+      <span className="goal-icon">⚖️</span>
+      <span className="grow">
+        <strong>{w} kg → {t.target_weight_kg} kg this month</strong>
+        <span className="muted tiny">
+          {plan.mode === 'reached' ? '🎉 Target reached' : `${plan.kg_to_go} kg to go`} · {plan.days_left} days left · suggested {plan.suggested} kcal/day
+        </span>
+      </span>
+      <span className="chev">›</span>
+    </button>
   );
 }

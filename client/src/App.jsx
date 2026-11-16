@@ -5,11 +5,13 @@ import Dashboard from './pages/Dashboard';
 import FoodPage from './pages/FoodPage';
 import WorkoutPage from './pages/WorkoutPage';
 import ProfilePage from './pages/ProfilePage';
+import GoalsPage from './pages/GoalsPage';
 
 const TABS = [
   { id: 'home', icon: '🏠', label: 'Home' },
   { id: 'food', icon: '🍽️', label: 'Food' },
   { id: 'workout', icon: '🏋️', label: 'Workout' },
+  { id: 'goals', icon: '🎯', label: 'Goals' },
   { id: 'profile', icon: '👤', label: 'Profile' },
 ];
 
@@ -111,7 +113,7 @@ function MainApp({ user, setUser }) {
       </aside>
 
       <main className="content">
-        {tab !== 'profile' && (
+        {tab !== 'profile' && tab !== 'goals' && (
           <TopBar user={user} date={date} setDate={setDate} />
         )}
         {error && <div className="error" onClick={() => setError('')}>{error}</div>}
@@ -119,7 +121,7 @@ function MainApp({ user, setUser }) {
         {tab === 'home' && (
           <Dashboard
             stats={stats} meals={meals} workouts={workouts} summary={summary}
-            onToggle={toggleWorkout} goTo={goTo}
+            onToggle={toggleWorkout} goTo={goTo} date={date}
           />
         )}
         {tab === 'food' && (
@@ -134,6 +136,12 @@ function MainApp({ user, setUser }) {
             onAdd={run(api.addWorkout)} onToggle={toggleWorkout} onDelete={run(api.deleteWorkout)}
             onCopyYesterday={run(() => api.copyWorkouts(shiftDate(date, -1), date))}
           />
+        )}
+        {tab === 'goals' && (
+          <>
+            <div className="topbar"><div><div className="muted">Weight & calories</div><h1>Your goals 🎯</h1></div></div>
+            <GoalsPage onGoalChanged={(g) => setUser({ ...user, calorie_goal: g })} />
+          </>
         )}
         {tab === 'profile' && <ProfilePage user={user} setUser={setUser} onLogout={logout} />}
       </main>

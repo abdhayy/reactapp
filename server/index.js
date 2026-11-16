@@ -4,6 +4,7 @@ const express = require('express');
 const db = require('./db');
 const ai = require('./ai');
 const { requireUser, mountAuthRoutes } = require('./auth');
+const { mountBodyRoutes } = require('./body');
 
 const app = express();
 app.use(express.json({ limit: '10mb' })); // room for meal photos
@@ -145,6 +146,9 @@ app.post('/api/ai/estimate', async (req, res) => {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
+
+// ---------- Body, weight & monthly targets ----------
+mountBodyRoutes(app);
 
 // ---------- Summary (last 7 days) ----------
 app.get('/api/summary', (req, res) => {

@@ -7,6 +7,8 @@ Track your daily **calorie intake** and tick off your **workout checklist**.
 - **Food:** search ~90 common Malaysian foods, or describe your meal (or snap a photo) and let AI estimate it.
   Build a "plate" (e.g. nasi + kari kambing + sayur campur) and save it as one meal.
 - **Workout:** plan exercises and tick them off
+- **Goals:** enter your sex, birth year, height and activity level, log your weight, and set a
+  **target weight for each month**. The app suggests how many calories to eat per day to reach it.
 - **Profile:** change your name, calorie goal and password
 
 On a computer the menu is on the left; on a phone it is a bottom tab bar.
@@ -33,6 +35,22 @@ Terminal 2 (app on http://localhost:5173):
 npm run client
 ```
 
+## How the calorie suggestion works
+
+`server/plan.js` does the maths:
+
+1. **BMR** (calories burned at rest), Mifflin-St Jeor formula:
+   `10 × weight + 6.25 × height − 5 × age + 5` (men) or `− 161` (women)
+2. **TDEE** (calories burned per day) = BMR × activity factor (1.2 sedentary … 1.9 very active)
+3. **Monthly target**: 1 kg of body fat ≈ 7700 kcal. The kg left to lose this month × 7700,
+   divided by the days left in the month, is the daily deficit. Suggested intake = TDEE − deficit.
+4. **Safety limits**: at most ~1 kg/week loss (1000 kcal/day deficit), never below 1200 kcal (women) /
+   1500 kcal (men), at most +500 kcal/day to gain. If the target is too fast, the app warns you and
+   shows the weight you can realistically reach by month end.
+5. **BMI** uses the Malaysian (Asian) cut-offs: normal 18.5–22.9, overweight 23–27.4, obese ≥ 27.5.
+
+These are estimates for general guidance, not medical advice.
+
 ## Turn on AI calorie estimates (optional, free)
 
 The AI uses **Google Gemini's free tier** (no credit card needed).
@@ -54,8 +72,10 @@ Notes:
 
 | Table      | What it stores |
 |------------|----------------|
-| `users`    | username, name, password hash (scrypt, never the real password), calorie_goal |
+| `users`    | username, name, password hash (scrypt, never the real password), calorie_goal, sex, birth_year, height_cm, activity, goal_weight_kg |
 | `sessions` | Login sessions (hashed token from the browser cookie, expiry) |
+| `weights`  | user_id, date, weight_kg (one per day) |
+| `monthly_targets` | user_id, month (YYYY-MM), target_weight_kg, start_weight_kg |
 | `meals`    | user_id, date, meal_type (breakfast/lunch/dinner/snack), food_name, calories, protein_g, carbs_g, fat_g |
 | `workouts` | user_id, date, exercise, sets, reps, duration_min, calories_burned, done (0/1) |
 | `foods`    | Food list: built-in foods (user_id 0) + each user's saved foods; name, serving, calories, macros |
@@ -88,6 +108,11 @@ All endpoints except `/api/auth/register` and `/api/auth/login` need you to be l
 | PATCH | `/api/workouts/:id/toggle` | Tick / untick |
 | DELETE | `/api/workouts/:id` | Remove an exercise |
 | POST | `/api/workouts/copy` | Copy one day's list to another (`{from, to}`) |
+| GET | `/api/body` | Body profile, weights, this month's target and the calorie suggestion |
+| PUT | `/api/body/profile` | `{sex, birth_year, height_cm, activity, goal_weight_kg}` |
+| POST | `/api/body/weights` | Log weight `{weight_kg, date}` |
+| PUT/DELETE | `/api/body/target` | Set / remove this month's target `{target_weight_kg}` |
+| POST | `/api/body/apply-suggestion` | Use the suggested intake as your daily calorie goal |
 | GET | `/api/summary` | Last 7 days: eaten, burned, workouts done |
 | GET | `/api/foods?q=nasi` | Search the food list |
 | POST | `/api/foods` | Save a food to your own list |

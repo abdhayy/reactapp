@@ -93,6 +93,37 @@ if (foodsExists && !hasColumn('foods', 'user_id')) {
   db.exec(FOODS_SQL);
 }
 
+// Body profile for the calorie calculator (added later, so add columns if missing)
+for (const [col, type] of [
+  ['sex', "TEXT CHECK (sex IN ('male','female'))"],
+  ['birth_year', 'INTEGER'],
+  ['height_cm', 'REAL'],
+  ['activity', 'TEXT'],
+  ['goal_weight_kg', 'REAL'],           // long-term goal weight
+]) {
+  if (!hasColumn('users', col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
+}
+
+db.exec(`
+  -- Weight log (one entry per day)
+  CREATE TABLE IF NOT EXISTS weights (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date        TEXT    NOT NULL,
+    weight_kg   REAL    NOT NULL CHECK (weight_kg BETWEEN 20 AND 400),
+    UNIQUE (user_id, date)
+  );
+
+  -- Target weight for each month ('YYYY-MM')
+  CREATE TABLE IF NOT EXISTS monthly_targets (
+    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month             TEXT    NOT NULL,
+    target_weight_kg  REAL    NOT NULL CHECK (target_weight_kg BETWEEN 20 AND 400),
+    start_weight_kg   REAL,                 -- weight when the target was set
+    PRIMARY KEY (user_id, month)
+  );
+`);
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date);
   CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date);

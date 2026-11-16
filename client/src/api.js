@@ -44,6 +44,14 @@ export const api = {
   saveFood: (food) => request('/foods', { method: 'POST', body: food }),
   deleteFood: (id) => request(`/foods/${id}`, { method: 'DELETE' }),
 
+  getBody: () => request('/body'),
+  saveBody: (profile) => request('/body/profile', { method: 'PUT', body: profile }),
+  logWeight: (weight_kg, date) => request('/body/weights', { method: 'POST', body: { weight_kg, date } }),
+  deleteWeight: (id) => request(`/body/weights/${id}`, { method: 'DELETE' }),
+  setTarget: (target_weight_kg) => request('/body/target', { method: 'PUT', body: { target_weight_kg } }),
+  removeTarget: () => request('/body/target', { method: 'DELETE' }),
+  applySuggestion: () => request('/body/apply-suggestion', { method: 'POST' }),
+
   aiStatus: () => request('/ai/status'),
   aiEstimate: (text, image) => request('/ai/estimate', { method: 'POST', body: { text, image } }),
 };
