@@ -1,29 +1,9 @@
-import { useState } from 'react';
-
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
 
-export default function MealLog({ meals, goal, eaten, onDelete, onGoal }) {
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [goalInput, setGoalInput] = useState(goal);
-  const pct = Math.min(100, Math.round((eaten / goal) * 100));
-
+export default function MealLog({ meals, onDelete }) {
   return (
     <div className="card">
-      <div className="card-head">
-        <h2>📒 Food log</h2>
-        {editingGoal ? (
-          <span>
-            <input type="number" className="small" value={goalInput} onChange={(e) => setGoalInput(e.target.value)} />
-            <button onClick={() => { onGoal(Number(goalInput)); setEditingGoal(false); }}>Save</button>
-          </span>
-        ) : (
-          <button className="link" onClick={() => { setGoalInput(goal); setEditingGoal(true); }}>Edit goal</button>
-        )}
-      </div>
-
-      <div className="progress"><div className={eaten > goal ? 'over' : ''} style={{ width: pct + '%' }} /></div>
-      <p className="muted">{eaten} / {goal} kcal</p>
-
+      <h2>📒 Food log</h2>
       {MEAL_TYPES.map((type) => {
         const items = meals.filter((m) => m.meal_type === type);
         if (!items.length) return null;

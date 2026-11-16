@@ -1,10 +1,14 @@
-import StatCards from '../components/StatCards';
 import WeeklySummary from '../components/WeeklySummary';
 
-const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+const MEAL_TYPES = [
+  { id: 'breakfast', icon: '🌅' },
+  { id: 'lunch', icon: '☀️' },
+  { id: 'dinner', icon: '🌙' },
+  { id: 'snack', icon: '🍪' },
+];
 
 export default function Dashboard({ stats, meals, workouts, summary, onToggle, goTo }) {
-  const { goal, eaten } = stats;
+  const { goal, eaten, burned, remaining } = stats;
   const pct = Math.min(100, Math.round((eaten / goal) * 100));
   const macros = meals.reduce(
     (t, m) => ({ p: t.p + m.protein_g, c: t.c + m.carbs_g, f: t.f + m.fat_g }),
@@ -14,31 +18,46 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
 
   return (
     <>
-      <StatCards stats={stats} />
+      {/* Hero: the day at a glance */}
+      <section className="card hero">
+        <Ring pct={pct} over={remaining < 0} value={Math.abs(remaining)} caption={remaining < 0 ? 'kcal over' : 'kcal left'} />
+        <div className="hero-stats">
+          <HeroStat icon="🎯" label="Goal" value={goal} />
+          <HeroStat icon="🍽️" label="Eaten" value={eaten} />
+          <HeroStat icon="🔥" label="Burned" value={burned} />
+          <div className="macros">
+            <Macro name="Protein" g={macros.p} kcalPerG={4} eaten={eaten} cls="p" />
+            <Macro name="Carbs" g={macros.c} kcalPerG={4} eaten={eaten} cls="c" />
+            <Macro name="Fat" g={macros.f} kcalPerG={9} eaten={eaten} cls="f" />
+          </div>
+        </div>
+      </section>
+
+      {/* Quick actions */}
+      <section className="quick">
+        <button onClick={() => goTo('food', { foodMode: 'search' })}><span>🔎</span>Log food</button>
+        <button onClick={() => goTo('food', { foodMode: 'ai' })}><span>✨</span>Ask AI</button>
+        <button onClick={() => goTo('workout')}><span>🏋️</span>Workout</button>
+      </section>
 
       <div className="grid">
         <div className="card">
           <div className="card-head">
-            <h2>🍽️ Today's food</h2>
-            <button className="link" onClick={() => goTo('food')}>+ Add food</button>
+            <h2>Meals</h2>
+            <button className="link" onClick={() => goTo('food')}>See all</button>
           </div>
-          <div className="ring-row">
-            <Ring pct={pct} over={eaten > goal} label={`${pct}%`} />
-            <div className="macros">
-              <Macro name="Protein" g={macros.p} kcalPerG={4} eaten={eaten} />
-              <Macro name="Carbs" g={macros.c} kcalPerG={4} eaten={eaten} />
-              <Macro name="Fat" g={macros.f} kcalPerG={9} eaten={eaten} />
-            </div>
-          </div>
-          <ul className="list compact">
-            {MEAL_TYPES.map((type) => {
-              const items = meals.filter((m) => m.meal_type === type);
+          <ul className="meal-rows">
+            {MEAL_TYPES.map(({ id, icon }) => {
+              const items = meals.filter((m) => m.meal_type === id);
               const kcal = items.reduce((s, m) => s + m.calories, 0);
               return (
-                <li key={type}>
-                  <span className="cap">{type}</span>
-                  <span className="muted ellipsis">{items.map((m) => m.food_name).join(', ') || '—'}</span>
-                  <strong>{kcal} kcal</strong>
+                <li key={id}>
+                  <span className="meal-icon">{icon}</span>
+                  <div className="grow">
+                    <div className="cap">{id}</div>
+                    <div className="muted tiny ellipsis-line">{items.map((m) => m.food_name).join(', ') || 'Nothing yet'}</div>
+                  </div>
+                  <strong className={kcal ? '' : 'muted'}>{kcal}</strong>
                 </li>
               );
             })}
@@ -47,11 +66,10 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
 
         <div className="card">
           <div className="card-head">
-            <h2>🏋️ Today's workout</h2>
-            <button className="link" onClick={() => goTo('workout')}>Manage</button>
+            <h2>Workout</h2>
+            <span className="muted">{done}/{workouts.length} done</span>
           </div>
           <div className="progress"><div className="green" style={{ width: workouts.length ? (done / workouts.length) * 100 + '%' : 0 }} /></div>
-          <p className="muted">{done} of {workouts.length} exercises done · {stats.burned} kcal burned</p>
           <ul className="list compact">
             {workouts.map((w) => (
               <li key={w.id} className={w.done ? 'done' : ''}>
@@ -59,10 +77,13 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
                   <input type="checkbox" checked={!!w.done} onChange={() => onToggle(w.id)} />
                   <span>{w.exercise}</span>
                 </label>
+                {w.calories_burned > 0 && <span className="muted tiny">{w.calories_burned} kcal</span>}
               </li>
             ))}
           </ul>
-          {!workouts.length && <p className="muted">No workout planned for this day.</p>}
+          {!workouts.length && (
+            <p className="muted">No workout planned. <button className="link" onClick={() => goTo('workout')}>Plan one</button></p>
+          )}
         </div>
       </div>
 
@@ -71,26 +92,35 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
   );
 }
 
-function Ring({ pct, over, label }) {
+function Ring({ pct, over, value, caption }) {
   const r = 42, c = 2 * Math.PI * r;
   return (
-    <svg viewBox="0 0 100 100" className="ring" role="img" aria-label={`${label} of daily goal`}>
+    <svg viewBox="0 0 100 100" className="ring" role="img" aria-label={`${value} ${caption}`}>
       <circle cx="50" cy="50" r={r} className="ring-bg" />
       <circle cx="50" cy="50" r={r} className={over ? 'ring-fg over' : 'ring-fg'}
         strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c} transform="rotate(-90 50 50)" />
-      <text x="50" y="47" textAnchor="middle" className="ring-big">{label}</text>
-      <text x="50" y="63" textAnchor="middle" className="ring-small">of goal</text>
+      <text x="50" y="50" textAnchor="middle" className="ring-big">{value}</text>
+      <text x="50" y="64" textAnchor="middle" className="ring-small">{caption}</text>
     </svg>
   );
 }
 
-function Macro({ name, g, kcalPerG, eaten }) {
+function HeroStat({ icon, label, value }) {
+  return (
+    <div className="hero-stat">
+      <span>{icon} {label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function Macro({ name, g, kcalPerG, eaten, cls }) {
   const share = eaten ? Math.round(((g * kcalPerG) / eaten) * 100) : 0;
   return (
     <div className="macro">
       <span>{name}</span>
-      <div className="progress thin"><div style={{ width: Math.min(100, share) + '%' }} /></div>
-      <span className="muted">{g.toFixed(0)}g · {share}%</span>
+      <div className="progress thin"><div className={cls} style={{ width: Math.min(100, share) + '%' }} /></div>
+      <span className="muted">{g.toFixed(0)}g</span>
     </div>
   );
 }

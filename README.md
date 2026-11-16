@@ -2,10 +2,14 @@
 
 Track your daily **calorie intake** and tick off your **workout checklist**.
 
-- **Dashboard tab:** today's calories, macros, meals, workout progress and a 7-day chart
-- **Food tab:** search ~90 common Malaysian foods, or describe your meal (or snap a photo) and let AI estimate it.
+- **Login:** each person has their own account, data and calorie goal
+- **Home:** today's calories left, macros, meals, workout checklist, quick actions and a 7-day chart
+- **Food:** search ~90 common Malaysian foods, or describe your meal (or snap a photo) and let AI estimate it.
   Build a "plate" (e.g. nasi + kari kambing + sayur campur) and save it as one meal.
-- **Workout tab:** plan exercises and tick them off
+- **Workout:** plan exercises and tick them off
+- **Profile:** change your name, calorie goal and password
+
+On a computer the menu is on the left; on a phone it is a bottom tab bar.
 
 - **Frontend:** React (Vite), in `client/`
 - **Backend:** Node.js + Express, in `server/`
@@ -50,21 +54,31 @@ Notes:
 
 | Table      | What it stores |
 |------------|----------------|
-| `settings` | Your daily calorie goal |
-| `meals`    | date, meal_type (breakfast/lunch/dinner/snack), food_name, calories, protein_g, carbs_g, fat_g |
-| `workouts` | date, exercise, sets, reps, duration_min, calories_burned, done (0/1) |
-| `foods`    | Food list for search: name, category, serving, calories, macros, source (builtin / custom / ai) |
+| `users`    | username, name, password hash (scrypt, never the real password), calorie_goal |
+| `sessions` | Login sessions (hashed token from the browser cookie, expiry) |
+| `meals`    | user_id, date, meal_type (breakfast/lunch/dinner/snack), food_name, calories, protein_g, carbs_g, fat_g |
+| `workouts` | user_id, date, exercise, sets, reps, duration_min, calories_burned, done (0/1) |
+| `foods`    | Food list: built-in foods (user_id 0) + each user's saved foods; name, serving, calories, macros |
 
 The built-in Malaysian foods are in `server/foods-seed.js` and are added automatically.
 Calorie values are typical-portion estimates; edit that file to adjust them or add more.
+
+Upgrading from the version without login? Your existing data is kept and moves to the
+**first account you sign up with**.
 
 The schema is in `server/db.js`. To look at the data, open `server/health.db`
 with [DB Browser for SQLite](https://sqlitebrowser.org/).
 
 ## API
 
+All endpoints except `/api/auth/register` and `/api/auth/login` need you to be logged in.
+
 | Method | URL | Purpose |
 |--------|-----|---------|
+| POST | `/api/auth/register` | Create account `{name, username, password}` |
+| POST | `/api/auth/login` | Log in `{username, password}` |
+| POST | `/api/auth/logout` | Log out |
+| GET/PUT | `/api/auth/me` | Who am I / change name or password |
 | GET/PUT | `/api/settings` | Read / change calorie goal |
 | GET | `/api/meals?date=YYYY-MM-DD` | Meals for a day |
 | POST | `/api/meals` | Add a meal |

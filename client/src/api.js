@@ -1,10 +1,15 @@
 // Small helper for talking to the backend.
+// The login cookie is sent automatically because the app and API share one address.
+let onUnauthorized = () => {};
+export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
+
 async function request(path, options = {}) {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized();
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Request failed (${res.status})`);
@@ -13,6 +18,13 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Accounts
+  me: () => request('/auth/me'),
+  login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
+  register: (data) => request('/auth/register', { method: 'POST', body: data }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  updateMe: (data) => request('/auth/me', { method: 'PUT', body: data }),
+
   getSettings: () => request('/settings'),
   setGoal: (calorie_goal) => request('/settings', { method: 'PUT', body: { calorie_goal } }),
 
