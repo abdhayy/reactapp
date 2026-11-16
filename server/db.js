@@ -110,6 +110,10 @@ for (const [table, col, type] of [
   ['workouts', 'exercise_key', 'TEXT'],                       // id from the exercise list
   ['workouts', 'met', 'REAL'],
   ['users', 'step_goal', 'INTEGER NOT NULL DEFAULT 10000'],
+  ['workouts', 'distance_km', 'REAL'],           // jogging / running
+  ['workouts', 'pace_sec_per_km', 'INTEGER'],
+  ['workouts', 'avg_hr', 'INTEGER'],
+  ['workouts', 'calc_method', 'TEXT'],           // how calories were worked out
 ]) {
   if (!hasColumn(table, col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
 }

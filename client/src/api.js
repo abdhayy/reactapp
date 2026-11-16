@@ -38,6 +38,7 @@ export const api = {
   deleteWorkout: (id) => request(`/workouts/${id}`, { method: 'DELETE' }),
   copyWorkouts: (from, to, kind) => request('/workouts/copy', { method: 'POST', body: { from, to, kind } }),
   getExercises: () => request('/exercises'),
+  estimateExercise: (data) => request('/exercises/estimate', { method: 'POST', body: data }),
 
   getSteps: (date) => request(`/steps?date=${date}`),
   saveSteps: (date, steps) => request('/steps', { method: 'PUT', body: { date, steps } }),

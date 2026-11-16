@@ -89,38 +89,61 @@ function StepsCard({ steps, onSave, onGoal }) {
 }
 
 // ---------- Cardio / strength list ----------
-const emptyForm = { exercise_key: '', exercise: '', intensity: 'moderate', duration_min: '', sets: '', reps: '' };
+const emptyForm = {
+  exercise_key: '', exercise: '', intensity: 'moderate', duration_min: '', sets: '', reps: '',
+  distance_km: '', pace: '', avg_hr: '',
+};
+
+const fmtPace = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+
+function buildPayload(form, kind, date) {
+  const isOther = form.exercise_key === 'other';
+  const n = (v) => (v === '' ? null : Number(v));
+  return {
+    date, kind,
+    exercise_key: isOther ? null : form.exercise_key,
+    exercise: isOther ? form.exercise : undefined,
+    intensity: isOther ? form.intensity : undefined,
+    duration_min: n(form.duration_min),
+    sets: n(form.sets),
+    reps: n(form.reps),
+    distance_km: n(form.distance_km),
+    pace: form.pace.trim() || null,
+    avg_hr: n(form.avg_hr),
+  };
+}
 
 function ExerciseList({ kind, date, info, items, onAdd, onToggle, onDelete, onCopy }) {
   const [form, setForm] = useState(emptyForm);
+  const [preview, setPreview] = useState(null); // { calories, method, ... } or { error }
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const isCardio = kind === 'cardio';
   const catalog = info?.catalog[kind] ?? [];
   const isOther = form.exercise_key === 'other';
+  const isRun = catalog.find((e) => e.key === form.exercise_key)?.run;
 
-  // Live estimate, same formula as the server: MET x kg x hours
-  const chosen = catalog.find((e) => e.key === form.exercise_key);
-  const met = chosen ? chosen.met : isOther ? info?.intensities[form.intensity] : null;
-  let minutes = Number(form.duration_min) || 0;
-  if (!minutes && !isCardio && Number(form.sets) > 0) minutes = Number(form.sets) * (info?.minutes_per_set ?? 1.5);
-  const estimate = met && minutes && info ? Math.round(met * info.weight_kg * (minutes / 60)) : null;
+  // Ask the server for the estimate (same calculation as saving), shortly after typing stops
+  useEffect(() => {
+    if (!form.exercise_key || (isOther && !form.exercise.trim())) { setPreview(null); return; }
+    const t = setTimeout(() => {
+      api.estimateExercise(buildPayload(form, kind, date))
+        .then(setPreview)
+        .catch((e) => setPreview({ error: e.message }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [form, kind, date, isOther]);
 
   const submit = async (e) => {
     e.preventDefault();
-    const ok = await onAdd({
-      date, kind,
-      exercise_key: isOther ? null : form.exercise_key,
-      exercise: isOther ? form.exercise : undefined,
-      intensity: isOther ? form.intensity : undefined,
-      duration_min: form.duration_min === '' ? null : Number(form.duration_min),
-      sets: form.sets === '' ? null : Number(form.sets),
-      reps: form.reps === '' ? null : Number(form.reps),
-    });
-    if (ok) setForm({ ...emptyForm });
+    const ok = await onAdd(buildPayload(form, kind, date));
+    if (ok) { setForm({ ...emptyForm }); setPreview(null); }
   };
 
   const done = items.filter((w) => w.done).length;
   const kcalDone = items.filter((w) => w.done).reduce((s, w) => s + w.calories_burned, 0);
+
+  // Show what the server worked out for the field the user left empty
+  const derived = preview && !preview.error ? preview : null;
 
   return (
     <div className="card">
@@ -147,7 +170,31 @@ function ExerciseList({ kind, date, info, items, onAdd, onToggle, onDelete, onCo
           </div>
         )}
 
-        {isCardio ? (
+        {isRun ? (
+          <div className="run-box">
+            <div className="run-title">🏃 Run details <span className="muted tiny">fill any two of time, distance and pace</span></div>
+            <div className="run-grid">
+              <label>Distance (km)
+                <input type="number" step="0.01" min="0.1" max="200" placeholder={derived?.distance_km && !form.distance_km ? `${derived.distance_km}` : 'e.g. 5'}
+                  value={form.distance_km} onChange={set('distance_km')} />
+              </label>
+              <label>Pace (min/km)
+                <input inputMode="numeric" pattern="\d{1,2}:[0-5]\d" title="minutes:seconds, e.g. 6:30"
+                  placeholder={derived?.pace && !form.pace ? derived.pace : 'e.g. 6:30'} value={form.pace} onChange={set('pace')} />
+              </label>
+              <label>Time (min)
+                <input type="number" step="0.1" min="1" max="600" placeholder={derived?.minutes && !form.duration_min ? `${derived.minutes}` : 'e.g. 30'}
+                  value={form.duration_min} onChange={set('duration_min')} />
+              </label>
+              <label>Avg heart rate (bpm) <span className="muted tiny">optional</span>
+                <input type="number" min="40" max="230" placeholder="e.g. 150" value={form.avg_hr} onChange={set('avg_hr')} />
+              </label>
+            </div>
+            {derived?.hr_ignored && (
+              <p className="muted tiny">Add your sex and birth year in <a href="#goals">Goals</a> to use heart rate for calories.</p>
+            )}
+          </div>
+        ) : isCardio ? (
           <>
             <input type="number" min="1" max="600" placeholder="Minutes" value={form.duration_min} onChange={set('duration_min')} required />
             <div className="chips">
@@ -166,14 +213,16 @@ function ExerciseList({ kind, date, info, items, onAdd, onToggle, onDelete, onCo
         )}
 
         <div className="ex-estimate">
-          {estimate != null ? (
+          {derived ? (
             <>
-              <strong>≈ {estimate} kcal</strong>
+              <strong>≈ {derived.calories} kcal</strong>
               <span className="muted tiny">
-                {met} MET × {info.weight_kg} kg × {minutes} min ÷ 60
-                {!isCardio && !form.duration_min && ` (${minutes} min from ${form.sets} sets)`}
+                {isRun && derived.distance_km ? `${derived.distance_km} km · ${derived.pace} /km · ` : ''}
+                {derived.minutes} min · based on {derived.method}
               </span>
             </>
+          ) : preview?.error && (form.duration_min || form.distance_km || form.pace || form.sets) ? (
+            <span className="field-error">{preview.error}</span>
           ) : (
             <span className="muted tiny">Calories are calculated automatically.</span>
           )}
@@ -189,12 +238,19 @@ function ExerciseList({ kind, date, info, items, onAdd, onToggle, onDelete, onCo
           <li key={w.id} className={w.done ? 'done' : ''}>
             <label>
               <input type="checkbox" checked={!!w.done} onChange={() => onToggle(w.id)} />
-              <span>{w.exercise}</span>
+              <span className="ex-name">
+                {w.exercise}
+                {w.distance_km != null && (
+                  <span className="run-stats">
+                    📏 {w.distance_km} km · ⏱️ {fmtPace(w.pace_sec_per_km)} /km{w.avg_hr ? ` · ❤️ ${w.avg_hr} bpm` : ''}
+                  </span>
+                )}
+              </span>
             </label>
             <span className="muted nowrap">
               {[w.sets && w.reps ? `${w.sets}×${w.reps}` : w.sets ? `${w.sets} sets` : null, `${w.duration_min} min`].filter(Boolean).join(' · ')}
             </span>
-            <strong className="kcal-tag">{w.calories_burned} kcal</strong>
+            <strong className="kcal-tag" title={w.calc_method ? `Based on ${w.calc_method}` : undefined}>{w.calories_burned} kcal</strong>
             <button className="del" onClick={() => onDelete(w.id)} aria-label="Delete">✕</button>
           </li>
         ))}

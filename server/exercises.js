@@ -50,26 +50,99 @@ const INTENSITY = { light: 3.0, moderate: 5.0, vigorous: 8.0 };
 const MINUTES_PER_SET = 1.5; // one set plus rest, used when minutes are not given
 const DEFAULT_WEIGHT = 70;
 
+// Jogging and running get extra fields: distance, pace and average heart rate
+const RUN_KEYS = new Set(['jogging', 'running_8', 'running_10', 'running_12']);
+
 const list = Object.fromEntries(
-  Object.entries(CATALOG).map(([kind, rows]) => [kind, rows.map(([key, name, met]) => ({ key, name, met }))])
+  Object.entries(CATALOG).map(([kind, rows]) =>
+    [kind, rows.map(([key, name, met]) => ({ key, name, met, run: RUN_KEYS.has(key) }))])
 );
 const byKey = Object.fromEntries(Object.values(list).flat().map((e) => [e.key, e]));
 
-// Returns { name, met, minutes, calories } or throws a message
-function calculate({ kind, exercise_key, exercise, intensity, sets, duration_min }, weightKg) {
+const fail = (msg) => { throw Object.assign(new Error(msg), { status: 400 }); };
+
+// "6:30" -> 390 seconds per km (also accepts a number of seconds)
+function parsePace(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return v;
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(String(v).trim());
+  if (!m) fail('Pace must look like 6:30 (minutes:seconds per km)');
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+const fmtPace = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+
+// Keytel et al. (2005): calories per minute from average heart rate, weight, age and sex
+function heartRateKcalPerMin(hr, weight, age, sex) {
+  const kj = sex === 'female'
+    ? -20.4022 + 0.4472 * hr - 0.1263 * weight + 0.074 * age
+    : -55.0969 + 0.6309 * hr + 0.1988 * weight + 0.2017 * age;
+  return kj / 4.184;
+}
+
+// ACSM running equation: oxygen use from speed -> MET
+const runningMet = (kmh) => (0.2 * ((kmh * 1000) / 60) + 3.5) / 3.5;
+
+// input: { kind, exercise_key, exercise, intensity, sets, duration_min, distance_km, pace, avg_hr }
+// person: { weight, age, sex } (age/sex may be null)
+// Returns { name, met, minutes, calories, method, distance_km, pace_sec_per_km, avg_hr } or throws
+function calculate(input, person = {}) {
+  const { kind, exercise_key, exercise, intensity, sets } = input;
+  const weight = person.weight || DEFAULT_WEIGHT;
   const known = exercise_key ? byKey[exercise_key] : null;
-  if (exercise_key && !known) throw new Error('Unknown exercise');
+  if (exercise_key && !known) fail('Unknown exercise');
   const name = known ? known.name : String(exercise || '').trim();
-  if (!name) throw new Error('Choose or type an exercise');
-  const met = known ? known.met : INTENSITY[intensity] ?? INTENSITY.moderate;
+  if (!name) fail('Choose or type an exercise');
+  let met = known ? known.met : INTENSITY[intensity] ?? INTENSITY.moderate;
+  let method = known ? `${name} effort (MET ${met})` : `${intensity || 'moderate'} effort (MET ${met})`;
 
-  let minutes = Number(duration_min) || 0;
+  let minutes = Number(input.duration_min) || 0;
+  let distance = null, pace = null, hr = null;
+
+  if (known?.run) {
+    distance = Number(input.distance_km) || null;
+    pace = parsePace(input.pace);
+    hr = Number(input.avg_hr) || null;
+    if (distance != null && (distance <= 0 || distance > 200)) fail('Distance must be 0–200 km');
+    if (pace != null && (pace < 150 || pace > 1200)) fail('Pace must be between 2:30 and 20:00 per km');
+    if (hr != null && (hr < 40 || hr > 230)) fail('Heart rate must be 40–230 bpm');
+
+    // Any two of time, distance and pace give the third
+    if (!minutes && distance && pace) minutes = (distance * pace) / 60;
+    if (minutes && distance && !pace) pace = (minutes * 60) / distance;
+    if (minutes && pace && !distance) distance = (minutes * 60) / pace;
+
+    if (pace) {
+      const kmh = 3600 / pace;
+      met = +runningMet(kmh).toFixed(1);
+      method = `your speed ${kmh.toFixed(1)} km/h (MET ${met})`;
+    }
+  }
+
   if (!minutes && kind === 'strength' && Number(sets) > 0) minutes = Number(sets) * MINUTES_PER_SET;
-  if (!minutes) throw new Error(kind === 'cardio' ? 'Enter how many minutes' : 'Enter sets or minutes');
-  if (minutes > 600) throw new Error('Minutes looks too long');
+  if (!minutes) fail(kind === 'cardio' ? (known?.run ? 'Enter minutes, or distance and pace' : 'Enter how many minutes') : 'Enter sets or minutes');
+  if (minutes > 600) fail('Minutes looks too long');
 
-  const calories = Math.round(met * (weightKg || DEFAULT_WEIGHT) * (minutes / 60));
-  return { name, met, minutes, calories };
+  let calories = met * weight * (minutes / 60);
+
+  // Heart rate gives a more personal number when we know age and sex
+  if (hr && hr >= 90 && person.age && person.sex) {
+    const perMin = heartRateKcalPerMin(hr, weight, person.age, person.sex);
+    if (perMin > 0) {
+      calories = perMin * minutes;
+      method = `your heart rate ${hr} bpm, age ${person.age}, ${person.sex}`;
+    }
+  }
+
+  return {
+    name, met, method,
+    minutes: Math.round(minutes * 10) / 10,
+    calories: Math.round(calories),
+    distance_km: distance != null ? Math.round(distance * 100) / 100 : null,
+    pace_sec_per_km: pace != null ? Math.round(pace) : null,
+    pace: pace != null ? fmtPace(pace) : null,
+    avg_hr: hr,
+    hr_ignored: Boolean(hr && !(hr >= 90 && person.age && person.sex)),
+  };
 }
 
 // Steps: walking at ~100 steps per minute, MET 3.5
@@ -77,4 +150,4 @@ function stepCalories(steps, weightKg) {
   return Math.round(3.5 * (weightKg || DEFAULT_WEIGHT) * (steps / 100 / 60));
 }
 
-module.exports = { list, INTENSITY, MINUTES_PER_SET, DEFAULT_WEIGHT, calculate, stepCalories };
+module.exports = { list, INTENSITY, MINUTES_PER_SET, DEFAULT_WEIGHT, calculate, stepCalories, fmtPace };

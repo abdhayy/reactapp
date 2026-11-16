@@ -63,6 +63,12 @@ const exercises = require('./exercises');
 const userWeight = (userId) =>
   db.prepare('SELECT weight_kg FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT 1').get(userId)?.weight_kg ?? null;
 
+// Weight, age and sex for calorie formulas
+const person = (userId) => {
+  const u = db.prepare('SELECT sex, birth_year FROM users WHERE id = ?').get(userId);
+  return { weight: userWeight(userId), age: u.birth_year ? new Date().getFullYear() - u.birth_year : null, sex: u.sex };
+};
+
 app.get('/api/exercises', (req, res) => {
   const w = userWeight(req.user.id);
   res.json({
@@ -72,6 +78,15 @@ app.get('/api/exercises', (req, res) => {
     weight_kg: w ?? exercises.DEFAULT_WEIGHT,
     weight_is_default: w == null,
   });
+});
+
+// Preview calories before adding (same calculation as saving)
+app.post('/api/exercises/estimate', (req, res) => {
+  try {
+    res.json(exercises.calculate(req.body, person(req.user.id)));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.get('/api/workouts', (req, res) => {
@@ -84,15 +99,17 @@ app.post('/api/workouts', (req, res) => {
   if (!['cardio', 'strength'].includes(kind)) return res.status(400).json({ error: 'kind must be cardio or strength' });
   let calc;
   try {
-    calc = exercises.calculate(req.body, userWeight(req.user.id));
+    calc = exercises.calculate(req.body, person(req.user.id));
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
   const info = db.prepare(
-    `INSERT INTO workouts (user_id, date, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO workouts (user_id, date, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned,
+       distance_km, pace_sec_per_km, avg_hr, calc_method)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(req.user.id, date, kind, req.body.exercise_key || null, calc.name, calc.met,
-    sets || null, reps || null, Math.round(calc.minutes * 10) / 10, calc.calories);
+    sets || null, reps || null, calc.minutes, calc.calories,
+    calc.distance_km, calc.pace_sec_per_km, calc.avg_hr, calc.method);
   res.status(201).json(db.prepare('SELECT * FROM workouts WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -113,8 +130,10 @@ app.delete('/api/workouts/:id', (req, res) => {
 app.post('/api/workouts/copy', (req, res) => {
   const { from, to = today(), kind } = req.body;
   const n = db.prepare(
-    `INSERT INTO workouts (user_id, date, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned)
-     SELECT user_id, ?, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned
+    `INSERT INTO workouts (user_id, date, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned,
+       distance_km, pace_sec_per_km, avg_hr, calc_method)
+     SELECT user_id, ?, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned,
+       distance_km, pace_sec_per_km, avg_hr, calc_method
      FROM workouts WHERE user_id = ? AND date = ? AND (? IS NULL OR kind = ?)`
   ).run(to, req.user.id, from, kind || null, kind || null).changes;
   res.json({ copied: n });

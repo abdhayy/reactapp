@@ -299,3 +299,12 @@ button.link.tiny { font-size: .75rem; margin-left: 6px; }
   .ex-row { grid-template-columns: 1fr; }
   .list li .muted.nowrap { display: none; }
 }
+.run-box { background: var(--bg); border-radius: 12px; padding: 12px; }
+.run-title { font-weight: 600; font-size: .9rem; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.run-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: end; }
+.run-grid label { display: grid; gap: 4px; font-size: .75rem; color: var(--muted); font-weight: 500; }
+.run-grid input { width: 100%; }
+.ex-name { display: flex; flex-direction: column; min-width: 0; }
+.run-stats { font-size: .75rem; color: var(--muted); text-decoration: none; }
+@media (max-width: 600px) { .run-grid { grid-template-columns: 1fr 1fr; } }
+.field-error { color: var(--red); font-size: .8rem; }

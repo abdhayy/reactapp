@@ -60,6 +60,11 @@ compared with resting, from the Compendium of Physical Activities).
 - **Calories = MET × your weight (kg) × hours.** Your latest weight from Goals is used (70 kg if none).
 - **Strength:** if you don't enter minutes, each set counts as 1.5 minutes (including rest).
 - **Other exercises:** choose light / moderate / hard effort (MET 3 / 5 / 8).
+- **Jogging / running:** enter any two of time, distance and pace (the third is worked out), plus
+  optional average heart rate.
+  - With pace: MET from your actual speed (ACSM running equation: VO2 = 0.2 × metres/min + 3.5).
+  - With heart rate, and your sex and birth year saved in Goals: Keytel et al. (2005) heart-rate formula,
+    which is more personal.
 - **Steps:** walking at about 100 steps a minute (MET 3.5). 10,000 steps ≈ 400 kcal at 70 kg.
 - Only exercises you **tick as done** count towards calories burned.
 
@@ -89,7 +94,7 @@ Notes:
 | `weights`  | user_id, date, weight_kg (one per day) |
 | `monthly_targets` | user_id, month (YYYY-MM), target_weight_kg, start_weight_kg |
 | `meals`    | user_id, date, meal_type (breakfast/lunch/dinner/snack), food_name, calories, protein_g, carbs_g, fat_g |
-| `workouts` | user_id, date, kind (cardio/strength), exercise, met, sets, reps, duration_min, calories_burned, done (0/1) |
+| `workouts` | user_id, date, kind (cardio/strength), exercise, met, sets, reps, duration_min, distance_km, pace_sec_per_km, avg_hr, calc_method, calories_burned, done (0/1) |
 | `daily_steps` | user_id, date, steps, calories |
 | `foods`    | Food list: built-in foods (user_id 0) + each user's saved foods; name, serving, calories, macros |
 
@@ -127,6 +132,7 @@ All endpoints except `/api/auth/register` and `/api/auth/login` need you to be l
 | PUT/DELETE | `/api/body/target` | Set / remove this month's target `{target_weight_kg}` |
 | POST | `/api/body/apply-suggestion` | Use the suggested intake as your daily calorie goal |
 | GET | `/api/exercises` | Exercise list with MET values and your weight |
+| POST | `/api/exercises/estimate` | Preview calories for an exercise without saving |
 | GET/PUT | `/api/steps` | Steps for a day / save `{date, steps}` |
 | PUT | `/api/steps/goal` | Change step goal `{step_goal}` |
 | GET | `/api/summary` | Last 7 days: eaten, burned, workouts done |
