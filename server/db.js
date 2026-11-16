@@ -104,7 +104,26 @@ for (const [col, type] of [
   if (!hasColumn('users', col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
 }
 
+// Exercise type, MET value and step goal (added later)
+for (const [table, col, type] of [
+  ['workouts', 'kind', "TEXT NOT NULL DEFAULT 'strength'"],   // 'cardio' or 'strength'
+  ['workouts', 'exercise_key', 'TEXT'],                       // id from the exercise list
+  ['workouts', 'met', 'REAL'],
+  ['users', 'step_goal', 'INTEGER NOT NULL DEFAULT 10000'],
+]) {
+  if (!hasColumn(table, col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+}
+
 db.exec(`
+  -- Steps walked per day
+  CREATE TABLE IF NOT EXISTS daily_steps (
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date      TEXT    NOT NULL,
+    steps     INTEGER NOT NULL CHECK (steps BETWEEN 0 AND 100000),
+    calories  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, date)
+  );
+
   -- Weight log (one entry per day)
   CREATE TABLE IF NOT EXISTS weights (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

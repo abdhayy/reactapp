@@ -56,23 +56,47 @@ app.delete('/api/meals/:id', (req, res) => {
   res.status(204).end();
 });
 
-// ---------- Workouts ----------
+// ---------- Exercise (cardio & strength) ----------
+const exercises = require('./exercises');
+
+// Latest logged weight, used to calculate calories burned
+const userWeight = (userId) =>
+  db.prepare('SELECT weight_kg FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT 1').get(userId)?.weight_kg ?? null;
+
+app.get('/api/exercises', (req, res) => {
+  const w = userWeight(req.user.id);
+  res.json({
+    catalog: exercises.list,
+    intensities: exercises.INTENSITY,
+    minutes_per_set: exercises.MINUTES_PER_SET,
+    weight_kg: w ?? exercises.DEFAULT_WEIGHT,
+    weight_is_default: w == null,
+  });
+});
+
 app.get('/api/workouts', (req, res) => {
   const date = req.query.date || today();
   res.json(db.prepare('SELECT * FROM workouts WHERE user_id = ? AND date = ? ORDER BY id').all(req.user.id, date));
 });
 
 app.post('/api/workouts', (req, res) => {
-  const { date = today(), exercise, sets = null, reps = null, duration_min = null, calories_burned = 0 } = req.body;
-  if (!exercise) return res.status(400).json({ error: 'exercise is required' });
+  const { date = today(), kind, sets = null, reps = null } = req.body;
+  if (!['cardio', 'strength'].includes(kind)) return res.status(400).json({ error: 'kind must be cardio or strength' });
+  let calc;
+  try {
+    calc = exercises.calculate(req.body, userWeight(req.user.id));
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
   const info = db.prepare(
-    `INSERT INTO workouts (user_id, date, exercise, sets, reps, duration_min, calories_burned)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(req.user.id, date, exercise, sets, reps, duration_min, calories_burned);
+    `INSERT INTO workouts (user_id, date, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(req.user.id, date, kind, req.body.exercise_key || null, calc.name, calc.met,
+    sets || null, reps || null, Math.round(calc.minutes * 10) / 10, calc.calories);
   res.status(201).json(db.prepare('SELECT * FROM workouts WHERE id = ?').get(info.lastInsertRowid));
 });
 
-// Tick / untick a workout
+// Tick / untick
 app.patch('/api/workouts/:id/toggle', (req, res) => {
   db.prepare('UPDATE workouts SET done = 1 - done WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
   const row = db.prepare('SELECT * FROM workouts WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
@@ -85,14 +109,44 @@ app.delete('/api/workouts/:id', (req, res) => {
   res.status(204).end();
 });
 
-// Copy one day's workout list into another date, unchecked
+// Copy one day's exercise list into another date, unchecked
 app.post('/api/workouts/copy', (req, res) => {
-  const { from, to = today() } = req.body;
+  const { from, to = today(), kind } = req.body;
   const n = db.prepare(
-    `INSERT INTO workouts (user_id, date, exercise, sets, reps, duration_min, calories_burned)
-     SELECT user_id, ?, exercise, sets, reps, duration_min, calories_burned FROM workouts WHERE user_id = ? AND date = ?`
-  ).run(to, req.user.id, from).changes;
+    `INSERT INTO workouts (user_id, date, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned)
+     SELECT user_id, ?, kind, exercise_key, exercise, met, sets, reps, duration_min, calories_burned
+     FROM workouts WHERE user_id = ? AND date = ? AND (? IS NULL OR kind = ?)`
+  ).run(to, req.user.id, from, kind || null, kind || null).changes;
   res.json({ copied: n });
+});
+
+// ---------- Steps ----------
+const stepsFor = (userId, date) => {
+  const row = db.prepare('SELECT steps, calories FROM daily_steps WHERE user_id = ? AND date = ?').get(userId, date);
+  const goal = db.prepare('SELECT step_goal FROM users WHERE id = ?').get(userId).step_goal;
+  return { date, steps: row?.steps ?? 0, calories: row?.calories ?? 0, step_goal: goal };
+};
+
+app.get('/api/steps', (req, res) => res.json(stepsFor(req.user.id, req.query.date || today())));
+
+app.put('/api/steps', (req, res) => {
+  const { date = today() } = req.body;
+  const steps = parseInt(req.body.steps, 10);
+  if (!(steps >= 0 && steps <= 100000)) return res.status(400).json({ error: 'Steps must be 0–100,000' });
+  if (date > today()) return res.status(400).json({ error: 'Cannot log steps for a future date' });
+  const kcal = exercises.stepCalories(steps, userWeight(req.user.id));
+  db.prepare(
+    `INSERT INTO daily_steps (user_id, date, steps, calories) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, date) DO UPDATE SET steps = excluded.steps, calories = excluded.calories`
+  ).run(req.user.id, date, steps, kcal);
+  res.json(stepsFor(req.user.id, date));
+});
+
+app.put('/api/steps/goal', (req, res) => {
+  const goal = parseInt(req.body.step_goal, 10);
+  if (!(goal >= 1000 && goal <= 50000)) return res.status(400).json({ error: 'Step goal must be 1,000–50,000' });
+  db.prepare('UPDATE users SET step_goal = ? WHERE id = ?').run(goal, req.user.id);
+  res.json(stepsFor(req.user.id, req.body.date || today()));
 });
 
 // ---------- Food list (built-in + your own) ----------
@@ -158,7 +212,9 @@ app.get('/api/summary', (req, res) => {
     )
     SELECT d AS date,
       (SELECT COALESCE(SUM(calories), 0) FROM meals WHERE user_id = :u AND date = d) AS eaten,
-      (SELECT COALESCE(SUM(calories_burned), 0) FROM workouts WHERE user_id = :u AND date = d AND done = 1) AS burned,
+      (SELECT COALESCE(SUM(calories_burned), 0) FROM workouts WHERE user_id = :u AND date = d AND done = 1)
+        + (SELECT COALESCE(SUM(calories), 0) FROM daily_steps WHERE user_id = :u AND date = d) AS burned,
+      (SELECT COALESCE(SUM(steps), 0) FROM daily_steps WHERE user_id = :u AND date = d) AS steps,
       (SELECT COUNT(*) FROM workouts WHERE user_id = :u AND date = d) AS workouts_total,
       (SELECT COUNT(*) FROM workouts WHERE user_id = :u AND date = d AND done = 1) AS workouts_done
     FROM days ORDER BY d

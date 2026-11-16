@@ -9,7 +9,7 @@ const MEAL_TYPES = [
   { id: 'snack', icon: '🍪' },
 ];
 
-export default function Dashboard({ stats, meals, workouts, summary, onToggle, goTo }) {
+export default function Dashboard({ stats, meals, workouts, steps, summary, onToggle, goTo }) {
   const [body, setBody] = useState(null);
   useEffect(() => { api.getBody().then(setBody).catch(() => {}); }, []);
 
@@ -44,7 +44,7 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
       <section className="quick">
         <button onClick={() => goTo('food', { foodMode: 'search' })}><span>🔎</span>Log food</button>
         <button onClick={() => goTo('food', { foodMode: 'ai' })}><span>✨</span>Ask AI</button>
-        <button onClick={() => goTo('workout')}><span>🏋️</span>Workout</button>
+        <button onClick={() => goTo('exercise')}><span>🏃</span>Exercise</button>
       </section>
 
       <div className="grid">
@@ -73,23 +73,27 @@ export default function Dashboard({ stats, meals, workouts, summary, onToggle, g
 
         <div className="card">
           <div className="card-head">
-            <h2>Workout</h2>
+            <h2>Exercise</h2>
             <span className="muted">{done}/{workouts.length} done</span>
           </div>
-          <div className="progress"><div className="green" style={{ width: workouts.length ? (done / workouts.length) * 100 + '%' : 0 }} /></div>
+          <div className="steps-mini" onClick={() => goTo('exercise')}>
+            <span>👟 <strong>{steps.steps.toLocaleString()}</strong> <span className="muted">/ {steps.step_goal.toLocaleString()} steps</span></span>
+            <span className="muted tiny">🔥 {steps.calories} kcal</span>
+          </div>
+          <div className="progress thin"><div className="green" style={{ width: Math.min(100, (steps.steps / steps.step_goal) * 100) + '%' }} /></div>
           <ul className="list compact">
             {workouts.map((w) => (
               <li key={w.id} className={w.done ? 'done' : ''}>
                 <label>
                   <input type="checkbox" checked={!!w.done} onChange={() => onToggle(w.id)} />
-                  <span>{w.exercise}</span>
+                  <span>{w.kind === 'cardio' ? '🏃' : '💪'} {w.exercise}</span>
                 </label>
-                {w.calories_burned > 0 && <span className="muted tiny">{w.calories_burned} kcal</span>}
+                <span className="muted tiny">{w.duration_min} min · {w.calories_burned} kcal</span>
               </li>
             ))}
           </ul>
           {!workouts.length && (
-            <p className="muted">No workout planned. <button className="link" onClick={() => goTo('workout')}>Plan one</button></p>
+            <p className="muted">No exercise planned. <button className="link" onClick={() => goTo('exercise')}>Plan some</button></p>
           )}
         </div>
       </div>

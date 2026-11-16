@@ -36,7 +36,12 @@ export const api = {
   addWorkout: (w) => request('/workouts', { method: 'POST', body: w }),
   toggleWorkout: (id) => request(`/workouts/${id}/toggle`, { method: 'PATCH' }),
   deleteWorkout: (id) => request(`/workouts/${id}`, { method: 'DELETE' }),
-  copyWorkouts: (from, to) => request('/workouts/copy', { method: 'POST', body: { from, to } }),
+  copyWorkouts: (from, to, kind) => request('/workouts/copy', { method: 'POST', body: { from, to, kind } }),
+  getExercises: () => request('/exercises'),
+
+  getSteps: (date) => request(`/steps?date=${date}`),
+  saveSteps: (date, steps) => request('/steps', { method: 'PUT', body: { date, steps } }),
+  setStepGoal: (step_goal, date) => request('/steps/goal', { method: 'PUT', body: { step_goal, date } }),
 
   getSummary: () => request('/summary'),
 

@@ -3,14 +3,14 @@ import { api, setUnauthorizedHandler, toDateStr, shiftDate } from './api';
 import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import FoodPage from './pages/FoodPage';
-import WorkoutPage from './pages/WorkoutPage';
+import ExercisePage from './pages/ExercisePage';
 import ProfilePage from './pages/ProfilePage';
 import GoalsPage from './pages/GoalsPage';
 
 const TABS = [
   { id: 'home', icon: '🏠', label: 'Home' },
   { id: 'food', icon: '🍽️', label: 'Food' },
-  { id: 'workout', icon: '🏋️', label: 'Workout' },
+  { id: 'exercise', icon: '🏃', label: 'Exercise' },
   { id: 'goals', icon: '🎯', label: 'Goals' },
   { id: 'profile', icon: '👤', label: 'Profile' },
 ];
@@ -39,6 +39,7 @@ function MainApp({ user, setUser }) {
   const [date, setDate] = useState(toDateStr(new Date()));
   const [meals, setMeals] = useState([]);
   const [workouts, setWorkouts] = useState([]);
+  const [steps, setSteps] = useState({ steps: 0, calories: 0, step_goal: 10000 });
   const [summary, setSummary] = useState([]);
   const [error, setError] = useState('');
 
@@ -57,9 +58,10 @@ function MainApp({ user, setUser }) {
 
   const load = useCallback(async () => {
     try {
-      const [m, w, sum] = await Promise.all([api.getMeals(date), api.getWorkouts(date), api.getSummary()]);
+      const [m, w, st, sum] = await Promise.all([api.getMeals(date), api.getWorkouts(date), api.getSteps(date), api.getSummary()]);
       setMeals(m);
       setWorkouts(w);
+      setSteps(st);
       setSummary(sum);
       setError('');
     } catch (e) {
@@ -88,7 +90,7 @@ function MainApp({ user, setUser }) {
 
   const goal = user.calorie_goal;
   const eaten = meals.reduce((s, m) => s + m.calories, 0);
-  const burned = workouts.filter((w) => w.done).reduce((s, w) => s + (w.calories_burned || 0), 0);
+  const burned = workouts.filter((w) => w.done).reduce((s, w) => s + (w.calories_burned || 0), 0) + steps.calories;
   const stats = { goal, eaten, burned, remaining: goal - eaten + burned };
 
   return (
@@ -120,8 +122,8 @@ function MainApp({ user, setUser }) {
 
         {tab === 'home' && (
           <Dashboard
-            stats={stats} meals={meals} workouts={workouts} summary={summary}
-            onToggle={toggleWorkout} goTo={goTo} date={date}
+            stats={stats} meals={meals} workouts={workouts} steps={steps} summary={summary}
+            onToggle={toggleWorkout} goTo={goTo}
           />
         )}
         {tab === 'food' && (
@@ -130,11 +132,13 @@ function MainApp({ user, setUser }) {
             onAddMeal={run(api.addMeal)} onDeleteMeal={run(api.deleteMeal)} onError={setError}
           />
         )}
-        {tab === 'workout' && (
-          <WorkoutPage
-            date={date} workouts={workouts} burned={burned}
+        {tab === 'exercise' && (
+          <ExercisePage
+            date={date} workouts={workouts} steps={steps} burned={burned}
             onAdd={run(api.addWorkout)} onToggle={toggleWorkout} onDelete={run(api.deleteWorkout)}
-            onCopyYesterday={run(() => api.copyWorkouts(shiftDate(date, -1), date))}
+            onCopy={run((kind) => api.copyWorkouts(shiftDate(date, -1), date, kind))}
+            onSaveSteps={run((n) => api.saveSteps(date, n))}
+            onStepGoal={run((g) => api.setStepGoal(g, date))}
           />
         )}
         {tab === 'goals' && (

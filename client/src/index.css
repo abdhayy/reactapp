@@ -276,3 +276,26 @@ button.link.tiny { font-size: .75rem; margin-left: 6px; }
   .inline-form { flex-wrap: wrap; }
   .inline-form input[type=date] { flex: 1; }
 }
+
+/* ================= Exercise ================= */
+.burn-bar { grid-template-columns: 1fr auto; }
+.segmented.big button { padding: 11px; font-size: 1rem; }
+.count { background: var(--accent); color: var(--accent-text); border-radius: 99px; font-size: .7rem; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
+.steps-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.steps-num { font-size: 1.8rem; font-weight: 800; }
+.steps-num span { font-size: .9rem; font-weight: 500; color: var(--muted); }
+.steps .inline-form { margin-top: 12px; }
+.inline-form.tight { margin: 0; }
+.inline-form.tight input { width: 100px; }
+.ex-form { display: grid; gap: 10px; margin-bottom: 10px; }
+.ex-form .chips { margin: 0; }
+.ex-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.ex-row.three { grid-template-columns: repeat(3, 1fr); }
+.ex-estimate { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-height: 1.4em; }
+.ex-estimate strong { color: var(--accent); font-size: 1.15rem; }
+.kcal-tag { font-size: .85rem; white-space: nowrap; }
+.steps-mini { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 6px; cursor: pointer; }
+@media (max-width: 600px) {
+  .ex-row { grid-template-columns: 1fr; }
+  .list li .muted.nowrap { display: none; }
+}
